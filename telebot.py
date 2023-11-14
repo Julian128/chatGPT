@@ -3,8 +3,15 @@ import time
 import os
 import pickle
 import numpy as np
+from enum import Enum
 
 from gpt import gpt
+
+
+class interactionMode(Enum):
+    TELEGRAM = 0
+    CONSOLE = 1
+    WEB = 2
 
 class TeleBot:
     def __init__(self, telegramApiKey, openaiApiKey):
@@ -21,6 +28,8 @@ class TeleBot:
         self.blockedUsers: list[int] = []
 
         self.gpt: gpt = gpt(openaiApiKey)
+
+        self.interactionMode = interactionMode.TELEGRAM
 
         if (os.path.exists("userUsage.pickle")):
             self.userUsage = pickle.load(open("userUsage.pickle", "rb"))
@@ -99,15 +108,27 @@ class TeleBot:
     #         print(e)
     #         return False
 
+    def setInteractionMode(self, mode: interactionMode):
+        self.interactionMode = mode
+
     def run(self):
         while True:
-            if (msg := self.readMessage()):
-                # if self.commands():
-                #     continue
-                response, tokensIn, tokensOut = self.gpt.getResponse(msg["name"], msg["text"])
-                self.addUsage(tokensIn, tokensOut)
-                self.sendMessage(msg["chatId"], response)
-                if (self.printOut):
-                    print(msg["name"], ":", msg["text"])
-                    print(response)
-            time.sleep(1)
+            if self.interactionMode == interactionMode.TELEGRAM:
+                if (msg := self.readMessage()):
+                    # if self.commands():
+                    #     continue
+                    response, tokensIn, tokensOut = self.gpt.getResponse(msg["name"], msg["text"])
+                    self.addUsage(tokensIn, tokensOut)
+                    self.sendMessage(msg["chatId"], response)
+                    if (self.printOut):
+                        print(msg["name"], ":", msg["text"])
+                        print(response)
+                time.sleep(1)
+            
+            elif self.interactionMode == interactionMode.CONSOLE:
+                if (msg := input("You: ")):
+                    # response, _, _ = self.gpt.getResponse("You", msg)
+                    response, _, _ = self.gpt.getLlamaResponse(msg)
+                    print("AI:", response)
+                time.sleep(1)
+

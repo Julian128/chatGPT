@@ -1,26 +1,31 @@
 import openai
-
+import time
+from llama_cpp import Llama
+from utils import loadCustomInstruction
 class gpt:
     temperature = 0.7
     maxTokens = 1024
     frequencyPenalty = 0
     presencePenalty = 0.6
-    maxContext = 8
-    currentModel = "gpt-3.5-turbo"  # gpt-4, gpt-3.5-turbo
+    maxContext = 5
     customInstruction = ""
     conversation = []
 
-    def __init__(self, openaiToken):
+    def __init__(self, openaiToken, model):
         openai.api_key = openaiToken
+        self.model = model
+        if model == "llama":
+            self.llama = Llama(model_path="/Users/julian/Code/llama.cpp/models/luna-ai-llama2-uncensored.ggmlv3.q8_0.bin", seed=-1, n_ctx=1024)
         
     def getInstruction(self, userName) -> str:
-        return f"A chat between {userName} and an AI assistant. The current model is {self.currentModel}. It is okay to call the user by their name." + self.customInstruction
+        return f"A chat between {userName} and an AI assistant. The current model is {self.model}." + self.customInstruction
 
     def changeModel(self, modelName):
-        self.currentModel = modelName 
+        self.model = modelName
 
-    def getResponse(self, userName, prompt) -> str:
+    def preparePrompt(self, prompt, userName):
         messages = [{"role": "system", "content": self.getInstruction(userName)}]
+        # messages = loadCustomInstruction()
         for prevPrompt, prevResponse in self.conversation[-self.maxContext:]:
             messages.extend(
                 (
@@ -29,47 +34,59 @@ class gpt:
                 )
             )
         messages.append({"role": "user", "content": prompt})
-        # functions = [
-        #         {
-        #             "name": "changeModel",
-        #             "description": "Change the model to use (gpt-4, gpt-3.5-turbo)", 
-        #             "parameters": {
-        #                 "type": "object",
-        #                 "properties": {
-        #                     "modelName": {
-        #                         "type": "string",
-        #                         "description": "The gpt model to use",
-        #                     }
-        #                 },
-        #                 "required": ["modelName"],
-        #             },
-        #         }
-        #     ]
-        
+        return messages
+
+    def getResponse(self, prompt, userName="user", stream=True) -> str:
+
+        messages = self.preparePrompt(prompt, userName)
         completion = openai.ChatCompletion.create(
-            model=self.currentModel,
+            model=self.model,
             messages=messages,
-            # functions=functions,
             temperature=self.temperature,
             max_tokens=self.maxTokens,
             top_p=1,
             frequency_penalty=self.frequencyPenalty,
             presence_penalty=self.presencePenalty,
+            stream=stream
         )
 
+        if stream:
+            return completion
+        
         response = completion.choices[0].message.content
         self.conversation.append((prompt, response))
         tokensIn = completion.usage.prompt_tokens
         tokensOut = completion.usage.completion_tokens
-        # print(completion)
-        # if response["function_call"]:
-        #     if response["function_call"]["name"] == "changeModel":
-        #         self.changeModel(response["function_call"]["parameters"]["modelName"])
-        #         self.sendMessage(self.message["chatId"], f"Model changed to {self.CURRENT_MODEL}")
+        return response
+        
+    def getLlamaResponse(self, prompt, userName="user", stream=True) -> str:
+        messages = self.preparePrompt(prompt, userName)
+        completion = self.llama.create_chat_completion(messages, stream=stream)
 
-        return response, tokensIn, tokensOut
-
-
-    # gpt4          - 8192 tokens   - €0.03/€0.06 per 1000 tokens in and out  - €0.05 per prompt
-    # gpt4-32k      - 32768 tokens  - €0.20 per 1000 tokens in and out  - €0.10 per prompt
-    # gpt-3.5-turbo - 8192 tokens   - €0.003/€0.004 per 1000 tokens in and out  - €0.005 per prompt
+        if stream:
+            return completion
+        
+        response = completion.choices[0].message.content
+        self.conversation.append((prompt, response))
+        tokensIn = completion.usage.prompt_tokens
+        tokensOut = completion.usage.completion_tokens
+        return response
+    
+    def run(self, stream=False):
+        while True:
+            if (prompt := input("You: ")):
+                response = self.getLlamaResponse(prompt, stream) if self.model == "llama" else self.getResponse(msg, stream)
+                fullResponse = ""
+                while True:
+                    resp = next(response, {})
+                    if resp:
+                        nextToken = resp["choices"][0].get("delta").get("content")
+                        if nextToken is not None:
+                            # yield nextToken
+                            print(nextToken, end="", flush=True)
+                            fullResponse += nextToken
+                    else:
+                        self.conversation.append((prompt, fullResponse))
+                        print()
+                        break
+            time.sleep(1)

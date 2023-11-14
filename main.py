@@ -1,13 +1,12 @@
 import json
-
-from telebot import TeleBot
+from gpt import gpt
 
 def main():
     with open("keys.json") as apikeys:
        keys = json.load(apikeys)
 
-    telebot = TeleBot(keys["TELEGRAM_KEY"], keys["OPENAI_KEY"])
-    telebot.run()
+    model = gpt(keys["OPENAI_KEY"], "llama")#"gpt-3.5-turbo")#"gpt-4-1106-preview")
+    model.run()
 
 if __name__ == "__main__":
     main()
